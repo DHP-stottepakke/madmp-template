@@ -201,7 +201,10 @@
 {%- set ethicalIssuesExist = "yes" if ethicalIssues|length > 0 else "no" -%}
 {%- set ethicalIssuesDescription = ethicalDesc|join(" ") -%}
 
-{#- ---------------- Datasets (from archived distributions) ---------------- -#}
+{#- ---------------- Datasets (RDA maDMP Common Standard 1.2) ----------------
+     json.key navigation only; runtime UUIDs are list-item _uuid and
+     ItemSelect _value references (resolved at runtime). -#}
+
 {%- set licenseRefMap = {
   "freeOpen":            "https://creativecommons.org/publicdomain/zero/1.0/",
   "freeOpenAttribution": "https://creativecommons.org/licenses/by/4.0/",
@@ -212,31 +215,141 @@
   "closed": "closed",
 } -%}
 
+{#- Chapters that hold cross-referenced source lists (aliased for readability). -#}
+{%- set reusing = replies.reusingCollectingChapter -%}
+{%- set datadoc = replies.creatingData -%}
+
 {%- set datasets = [] -%}
 {%- for ds in archiving.distributions -%}
   {%- set dsTitle = ds.dataset._value if ds.dataset else "(unnamed dataset)" -%}
 
-  {#- description (free-text branch only) -#}
-  {%- set dsDescription = "" -%}
-  {%- if ds.description and ds.description._value == "enterFreeText" and ds.description.briefDescriptionDataset -%}
-    {%- set dsDescription = ds.description.briefDescriptionDataset._value -%}
-  {%- endif -%}
-
-  {#- dataset identifier: prefer PID from "hasBeenArchived" branch -#}
-  {%- set dsId = {"identifier": ds._uuid, "type": "other"} -%}
+  {#- ---------- dataset_id + alternate_identifier (three PID sources) ---------- -#}
+  {#- a) Import DOI information from DataCite (DataverseNO, Zenodo, …)
+       b) Import information from OMICS DI (biomolecular datasets)
+       c) Enter link/reference manually                                          -#}
+  {%- set dsId = {"identifier": ds._uuid, "type": "other"} -%}   {#- fallback only -#}
+  {%- set altIds = [] -%}
   {%- if ds.hasBeenArchived and ds.hasBeenArchived._value == "trustworthyResearchData" -%}
     {%- set epi = ds.hasBeenArchived.enterPersistentIdentifier -%}
     {%- if epi -%}
+
+      {#- (a) DataCite DOI -#}
       {%- if epi._value == "importDoiInformation" and epi.doiSearch2 and epi.doiSearch2._raw -%}
-        {%- set doiId = epi.doiSearch2._raw.doi if epi.doiSearch2._raw is mapping else None -%}
-        {%- if doiId -%}{%- set dsId = {"identifier": doiId, "type": "doi"} -%}{%- endif -%}
+        {%- set dc = epi.doiSearch2._raw -%}
+        {#- DataCite REST exposes the DOI as `id` (and/or attributes.doi), not a bare `doi`. -#}
+        {%- set doiId = dc.id if dc.id else (dc.attributes.doi if dc.attributes else None) -%}
+        {%- if doiId -%}
+          {%- set doiUrl = doiId if doiId.startswith("http") else ("https://doi.org/" ~ doiId) -%}
+          {%- set dsId = {"identifier": doiUrl, "type": "doi"} -%}
+        {%- endif -%}
+
+      {#- (b) OMICS DI -#}
+      {%- elif epi._value == "importInformationOmics" and epi.omicsDiSearch and epi.omicsDiSearch._raw -%}
+        {%- set omics = epi.omicsDiSearch._raw -%}
+        {%- if omics.id and omics.source -%}
+          {%- set dsId = {
+            "identifier": "https://www.omicsdi.org/dataset/" ~ omics.source ~ "/" ~ omics.id,
+            "type": "url"
+          } -%}
+          {#- keep the bare accession as an alternate identifier (1.2 field) -#}
+          {%- do altIds.append({"identifier": omics.id, "type": "accession number"}) -%}
+        {%- endif -%}
+
+      {#- (c) Manual link / reference -#}
       {%- elif epi._value == "enterLinkReference" and epi.linkReference and epi.linkReference._value -%}
-        {%- set dsId = {"identifier": epi.linkReference._value, "type": "url"} -%}
+        {%- set linkVal = epi.linkReference._value -%}
+        {%- set dsId = {"identifier": linkVal,
+                        "type": "doi" if "doi.org" in linkVal else "url"} -%}
       {%- endif -%}
     {%- endif -%}
   {%- endif -%}
 
-  {#- distribution: data access + license -#}
+  {#- ---------- description + data_quality_assurance ----------
+       description : free-text branch OR cross-ref ("selectInformationChapter") into a
+                     capture-method origin item selected by an ItemSelect question.
+       data_quality_assurance : emitted ONLY from a cross-referenced origin item that
+                     actually carries a quality field — never from the project-wide
+                     Processing chapter:
+                       reusingCollectingDataset  -> dataMeasurementEquipment.qualityProcessesApplied (multichoice)
+                       reusingCollectingDataset2 -> datasets.integrityQualityMeasures             (free text)
+                       reusingCollectingDataset3 -> listPublishedArchived                         (no quality field => no QA)
+  -#}
+  {%- set dsDescription = "" -%}
+  {%- set qa = [] -%}
+  {%- if ds.description -%}
+    {%- if ds.description._value == "enterFreeText" and ds.description.briefDescriptionDataset -%}
+      {%- set dsDescription = ds.description.briefDescriptionDataset._value -%}
+
+    {%- elif ds.description._value == "selectInformationChapter" -%}
+
+      {#- (1) measured data -> dataMeasurementEquipment (quality: qualityProcessesApplied) -#}
+      {%- if ds.description.reusingCollectingDataset and reusing and reusing.hasMeasuredData -%}
+        {%- set ref = ds.description.reusingCollectingDataset._value -%}
+        {%- set lst = reusing.hasMeasuredData.dataMeasurementEquipment -%}
+        {%- set item = (lst | selectattr('_uuid', 'equalto', ref) | first | default(None))
+             if (lst and ref) else None -%}
+        {%- if item -%}
+          {%- if not dsDescription and item.applicableAdditionalDescription2 and item.applicableAdditionalDescription2._value -%}
+            {%- set dsDescription = item.applicableAdditionalDescription2._value -%}
+          {%- elif not dsDescription and item.dataset and item.dataset._value -%}
+            {%- set dsDescription = "Data originating from: " ~ item.dataset._value -%}
+          {%- endif -%}
+          {%- if item.qualityProcessesApplied -%}
+            {%- for qp in item.qualityProcessesApplied -%}{%- do qa.append(qp._label) -%}{%- endfor -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endif -%}
+
+      {#- (2) reused datasets/records -> datasets (quality: integrityQualityMeasures) -#}
+      {%- if ds.description.reusingCollectingDataset2 and reusing and reusing.reDatasetsRecords -%}
+        {%- set ref = ds.description.reusingCollectingDataset2._value -%}
+        {%- set lst = reusing.reDatasetsRecords.datasets -%}
+        {%- set item = (lst | selectattr('_uuid', 'equalto', ref) | first | default(None))
+             if (lst and ref) else None -%}
+        {%- if item -%}
+          {%- if not dsDescription and item.collectionMethodology and item.collectionMethodology._value -%}
+            {%- set dsDescription = item.collectionMethodology._value -%}
+          {%- elif not dsDescription and item.dataset_1 and item.dataset_1._value -%}
+            {%- set dsDescription = "Data originating from: " ~ item.dataset_1._value -%}
+          {%- endif -%}
+          {%- if item.integrityQualityMeasures and item.integrityQualityMeasures._value -%}
+            {%- do qa.append(item.integrityQualityMeasures._value) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endif -%}
+
+      {#- (3) published/archived data -> listPublishedArchived: description only, no quality field.
+           TODO: confirm the parent option-question navigation for this list, then read
+           descriptionData for the dataset description. No QA is emitted for this branch. -#}
+    {%- endif -%}
+  {%- endif -%}
+
+  {#- ---------- metadata (cross-ref to the selected metadata standard) ---------- -#}
+  {%- set metadataStd = [] -%}
+  {%- if ds.metadataAccompaniesDataset -%}
+    {%- if ds.metadataAccompaniesDataset._value == "selectAnswerMetadata"
+           and ds.metadataAccompaniesDataset.selectMetadataStandard -%}
+      {%- set stdRef = ds.metadataAccompaniesDataset.selectMetadataStandard._value -%}
+      {%- set stdList = datadoc.miaStandardsExist.standards
+           if (datadoc and datadoc.miaStandardsExist) else None -%}
+      {%- set stdItem = (stdList | selectattr('_uuid', 'equalto', stdRef) | first | default(None))
+           if (stdList and stdRef) else None -%}
+      {%- if stdItem and stdItem.standard and stdItem.standard._raw and stdItem.standard._raw.doi -%}
+        {%- set std = stdItem.standard._raw -%}
+        {%- set mEntry = {
+          "metadata_standard_id": {"identifier": "https://doi.org/" ~ std.doi, "type": "url"}
+        } -%}
+        {%- set mDesc = stdItem.provideContextStandard._value
+             if (stdItem.provideContextStandard and stdItem.provideContextStandard._value) else std.name -%}
+        {%- if mDesc -%}{%- do mEntry.update({"description": mDesc}) -%}{%- endif -%}
+        {%- do metadataStd.append(mEntry) -%}
+      {%- endif -%}
+    {#- TODO: handle 'metadataStandardInformation' (in-dataset FAIRsharing import)
+         and 'addMetadataInformation' (manual) with the same metadata shape. -#}
+    {%- endif -%}
+  {%- endif -%}
+
+  {#- ---------- distribution: access + license ---------- -#}
   {%- set accessVal = accessMap.get(ds.access._value, "") if ds.access else "" -%}
 
   {%- set licenses = [] -%}
@@ -273,11 +386,46 @@
   {%- if ds.fileFormatDataset and ds.fileFormatDataset._value -%}
     {%- do distribution.update({"format": [ds.fileFormatDataset._value]}) -%}
   {%- endif -%}
+
+  {#- byte_size: the questionnaire captures size in GB (question text: "…in GB").
+       RDA byte_size is an INTEGER number of bytes. Convert (decimal GB = 1e9).
+       Use 1073741824 instead if your users mean binary GiB. -#}
   {%- if ds.sizeDataset and ds.sizeDataset._value -%}
-    {%- do distribution.update({"byte_size": ds.sizeDataset._value}) -%}
+    {%- do distribution.update({"byte_size": (ds.sizeDataset._value | float * 1000000000) | int}) -%}
   {%- endif -%}
+
+  {#- download_url: the resolved PID landing/URL, when it is an http(s) URL.
+       (access_url is the more precise field for a pure landing page if preferred.) -#}
+  {%- if dsId.identifier and dsId.identifier.startswith("http") -%}
+    {%- do distribution.update({"download_url": dsId.identifier}) -%}
+  {%- endif -%}
+
+  {#- host: resolved per-dataset from the "Select archive" selector, which
+       references an item in the "Identify archive(s)" list.
+       TODO (RCN / Science Europe extension): selectArchive is a
+       "Desirable: Complete DMP (concluding the project)" stage question and is
+       often unanswered in an early DMP — this block is fully guarded and simply
+       emits no host when the selector is missing. -#}
+  {%- set archiveRef = ds.hasBeenArchived.nameArchive.selectArchive._value
+       if (ds.hasBeenArchived and ds.hasBeenArchived.nameArchive
+           and ds.hasBeenArchived.nameArchive.selectArchive) else None -%}
+  {%- if archiveRef -%}
+    {%- set archiveList = archiving.identifyArchiveDepositing -%}
+    {%- set chosenArchive = (archiveList | selectattr('_uuid', 'equalto', archiveRef) | first | default(None))
+         if archiveList else None -%}
+    {%- if chosenArchive and chosenArchive.repository and chosenArchive.repository._raw -%}
+      {%- set repo = chosenArchive.repository._raw -%}
+      {%- set host = {} -%}
+      {%- if repo.name -%}{%- do host.update({"title": repo.name}) -%}{%- endif -%}
+      {%- if repo.homepage -%}{%- do host.update({"url": repo.homepage}) -%}{%- endif -%}
+      {%- if repo.url -%}{%- do host.update({"host_id": {"identifier": repo.url, "type": "url"}}) -%}{%- endif -%}
+      {%- if host -%}{%- do distribution.update({"host": host}) -%}{%- endif -%}
+    {%- endif -%}
+  {%- endif -%}
+
   {%- if licenses|length > 0 -%}{%- do distribution.update({"license": licenses}) -%}{%- endif -%}
 
+  {#- ---------- personal / sensitive flags ---------- -#}
   {%- set personalData = "unknown" -%}
   {%- if ds.containsPersonalData -%}
     {%- set personalData = "yes" if ds.containsPersonalData._value is sameas true else "no" -%}
@@ -287,6 +435,7 @@
     {%- set sensitiveData = "yes" if ds.containsSensitiveInformation._value is sameas true else "no" -%}
   {%- endif -%}
 
+  {#- ---------- assemble dataset ---------- -#}
   {%- set dataset = {
     "dataset_id": dsId,
     "title": dsTitle,
@@ -294,9 +443,13 @@
     "sensitive_data": sensitiveData,
     "distribution": [distribution]
   } -%}
-  {%- if dsDescription -%}{%- do dataset.update({"description": dsDescription}) -%}{%- endif -%}
+  {%- if altIds|length > 0      -%}{%- do dataset.update({"alternate_identifier": altIds}) -%}{%- endif -%}
+  {%- if dsDescription          -%}{%- do dataset.update({"description": dsDescription}) -%}{%- endif -%}
+  {%- if metadataStd|length > 0 -%}{%- do dataset.update({"metadata": metadataStd}) -%}{%- endif -%}
+  {%- if qa|length > 0          -%}{%- do dataset.update({"data_quality_assurance": qa}) -%}{%- endif -%}
   {%- do datasets.append(dataset) -%}
 {%- endfor -%}
+
 
 {#- ---------------- Costs (from responsibilities chapter) ---------------- -#}
 {%- set costs = [] -%}

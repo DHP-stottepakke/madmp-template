@@ -1,7 +1,7 @@
 {
   "organizationId": "dsw",
   "templateId": "rda-madmp",
-  "version": "1.28.0",
+  "version": "1.29.0",
   "name": "maDMP (RDA DMP Common Standard)",
   "description": "Machine-actionable DMP according to RDA Common Standard",
   "license": "Apache-2.0",
