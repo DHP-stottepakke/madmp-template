@@ -8,18 +8,6 @@
   "metamodelVersion": "18",
   "allowedPackages": [
     {
-      "orgId": "dsw",
-      "kmId": "root",
-      "minVersion": "2.8.0",
-      "maxVersion": null
-    },
-    {
-      "orgId": "dsw",
-      "kmId": "lifesciences",
-      "minVersion": "2.8.0",
-      "maxVersion": null
-    },
-    {
       "orgId": "research.data.no",
       "kmId": "norway-generic",
       "minVersion": "1.2.0",
