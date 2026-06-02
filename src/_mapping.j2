@@ -284,7 +284,7 @@
 
       {#- (1) measured data -> dataMeasurementEquipment (quality: qualityProcessesApplied) -#}
       {%- if ds.description.reusingCollectingDataset and reusing and reusing.hasMeasuredData -%}
-        {%- set ref = ds.description.reusingCollectingDataset._value -%}
+        {%- set ref = ds.description.reusingCollectingDataset._uuid -%}
         {%- set lst = reusing.hasMeasuredData.dataMeasurementEquipment -%}
         {%- set item = (lst | selectattr('_uuid', 'equalto', ref) | first | default(None))
              if (lst and ref) else None -%}
@@ -302,7 +302,7 @@
 
       {#- (2) reused datasets/records -> datasets (quality: integrityQualityMeasures) -#}
       {%- if ds.description.reusingCollectingDataset2 and reusing and reusing.reDatasetsRecords -%}
-        {%- set ref = ds.description.reusingCollectingDataset2._value -%}
+        {%- set ref = ds.description.reusingCollectingDataset2._uuid -%}
         {%- set lst = reusing.reDatasetsRecords.datasets -%}
         {%- set item = (lst | selectattr('_uuid', 'equalto', ref) | first | default(None))
              if (lst and ref) else None -%}
@@ -329,7 +329,7 @@
   {%- if ds.metadataAccompaniesDataset -%}
     {%- if ds.metadataAccompaniesDataset._value == "selectAnswerMetadata"
            and ds.metadataAccompaniesDataset.selectMetadataStandard -%}
-      {%- set stdRef = ds.metadataAccompaniesDataset.selectMetadataStandard._value -%}
+      {%- set stdRef = ds.metadataAccompaniesDataset.selectMetadataStandard._uuid -%}
       {%- set stdList = datadoc.miaStandardsExist.standards
            if (datadoc and datadoc.miaStandardsExist) else None -%}
       {%- set stdItem = (stdList | selectattr('_uuid', 'equalto', stdRef) | first | default(None))
@@ -406,7 +406,7 @@
        "Desirable: Complete DMP (concluding the project)" stage question and is
        often unanswered in an early DMP — this block is fully guarded and simply
        emits no host when the selector is missing. -#}
-  {%- set archiveRef = ds.hasBeenArchived.nameArchive.selectArchive._value
+  {%- set archiveRef = ds.hasBeenArchived.nameArchive.selectArchive._uuid
        if (ds.hasBeenArchived and ds.hasBeenArchived.nameArchive
            and ds.hasBeenArchived.nameArchive.selectArchive) else None -%}
   {%- if archiveRef -%}

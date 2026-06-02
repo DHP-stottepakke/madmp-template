@@ -69,8 +69,12 @@
       {%- if "description" in project.keys() %}
       dct:description {{ project["description"]|tojson }} ;
       {%- endif %}
+      {%- if "start" in project.keys() %}
       dcso:start {{ project["start"]|tojson }}^^xsd:date ;
+      {%- endif %}
+      {%- if "end" in project.keys() %}
       dcso:end {{ project["end"]|tojson }}^^xsd:date ;
+      {%- endif %}
       {%- if "funding" in project.keys() and project["funding"]|length > 0 %}
       dcso:hasFunding
       {%- for funding in project["funding"] %}
