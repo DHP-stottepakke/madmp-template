@@ -271,7 +271,7 @@
                      actually carries a quality field — never from the project-wide
                      Processing chapter:
                        reusingCollectingDataset  -> dataMeasurementEquipment.qualityProcessesApplied (multichoice)
-                       reusingCollectingDataset2 -> datasets.integrityQualityMeasures             (free text)
+                       reusingCollectingDataset2 -> datasets.integrityQualityMeasures (free text; list under hasNonMeasuredData)
                        reusingCollectingDataset3 -> listPublishedArchived                         (no quality field => no QA)
   -#}
   {%- set dsDescription = "" -%}
@@ -301,9 +301,9 @@
       {%- endif -%}
 
       {#- (2) reused datasets/records -> datasets (quality: integrityQualityMeasures) -#}
-      {%- if ds.description.reusingCollectingDataset2 and reusing and reusing.reDatasetsRecords -%}
+      {%- if ds.description.reusingCollectingDataset2 and reusing and reusing.hasNonMeasuredData -%}
         {%- set ref = ds.description.reusingCollectingDataset2._uuid -%}
-        {%- set lst = reusing.reDatasetsRecords.datasets -%}
+        {%- set lst = reusing.hasNonMeasuredData.datasets -%}
         {%- set item = (lst | selectattr('_uuid', 'equalto', ref) | first | default(None))
              if (lst and ref) else None -%}
         {%- if item -%}
