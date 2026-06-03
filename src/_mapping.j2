@@ -400,28 +400,42 @@
     {%- do distribution.update({"download_url": dsId.identifier}) -%}
   {%- endif -%}
 
-  {#- host: resolved per-dataset from the "Select archive" selector, which
-       references an item in the "Identify archive(s)" list.
-       TODO (RCN / Science Europe extension): selectArchive is a
-       "Desirable: Complete DMP (concluding the project)" stage question and is
-       often unanswered in an early DMP — this block is fully guarded and simply
-       emits no host when the selector is missing. -#}
-  {%- set archiveRef = ds.hasBeenArchived.nameArchive.selectArchive._uuid
-       if (ds.hasBeenArchived and ds.hasBeenArchived.nameArchive
-           and ds.hasBeenArchived.nameArchive.selectArchive) else None -%}
-  {%- if archiveRef -%}
-    {%- set archiveList = archiving.identifyArchiveDepositing -%}
-    {%- set chosenArchive = (archiveList | selectattr('_uuid', 'equalto', archiveRef) | first | default(None))
-         if archiveList else None -%}
-    {%- if chosenArchive and chosenArchive.repository and chosenArchive.repository._raw -%}
-      {%- set repo = chosenArchive.repository._raw -%}
-      {%- set host = {} -%}
-      {%- if repo.name -%}{%- do host.update({"title": repo.name}) -%}{%- endif -%}
-      {%- if repo.homepage -%}{%- do host.update({"url": repo.homepage}) -%}{%- endif -%}
-      {%- if repo.url -%}{%- do host.update({"host_id": {"identifier": repo.url, "type": "url"}}) -%}{%- endif -%}
-      {%- if host -%}{%- do distribution.update({"host": host}) -%}{%- endif -%}
+  {#- host: built from whichever "Name of the archive" (nameArchive) branch is filled:
+       selectAnswerIdentify       -> selectArchive (ItemSelect) -> identifyArchiveDepositing
+                                     item's repository (FAIRsharing payload)
+       archiveInformationImported -> archiveInformationFairsharing (in-place FAIRsharing payload)
+       enterArchiveManually       -> archive (free-text archive name only)
+       Both FAIRsharing payloads share the same raw shape (name / homepage / url=DOI).
+       TODO (RCN / Science Europe extension): selectArchive is a "Desirable: Complete DMP
+       (concluding the project)" stage question; the block is fully guarded and emits no
+       host when nothing is filled. -#}
+  {%- set na = ds.hasBeenArchived.nameArchive if ds.hasBeenArchived else None -%}
+  {%- set repo = None -%}        {#- FAIRsharing raw payload, if any -#}
+  {%- set hostTitle = None -%}   {#- plain archive name, manual branch -#}
+  {%- if na -%}
+    {%- if na._value == "selectAnswerIdentify" and na.selectArchive and na.selectArchive._uuid -%}
+      {%- set archiveList = archiving.identifyArchiveDepositing -%}
+      {%- set chosen = (archiveList | selectattr('_uuid', 'equalto', na.selectArchive._uuid) | first | default(None))
+           if archiveList else None -%}
+      {%- if chosen and chosen.repository and chosen.repository._raw -%}
+        {%- set repo = chosen.repository._raw -%}
+      {%- endif -%}
+    {%- elif na._value == "archiveInformationImported"
+             and na.archiveInformationFairsharing and na.archiveInformationFairsharing._raw -%}
+      {%- set repo = na.archiveInformationFairsharing._raw -%}
+    {%- elif na._value == "enterArchiveManually" and na.archive and na.archive._value -%}
+      {%- set hostTitle = na.archive._value -%}
     {%- endif -%}
   {%- endif -%}
+  {%- set host = {} -%}
+  {%- if repo -%}
+    {%- if repo.name -%}{%- do host.update({"title": repo.name}) -%}{%- endif -%}
+    {%- if repo.homepage -%}{%- do host.update({"url": repo.homepage}) -%}{%- endif -%}
+    {%- if repo.url -%}{%- do host.update({"host_id": {"identifier": repo.url, "type": "url"}}) -%}{%- endif -%}
+  {%- elif hostTitle -%}
+    {%- do host.update({"title": hostTitle}) -%}
+  {%- endif -%}
+  {%- if host -%}{%- do distribution.update({"host": host}) -%}{%- endif -%}
 
   {%- if licenses|length > 0 -%}{%- do distribution.update({"license": licenses}) -%}{%- endif -%}
 
