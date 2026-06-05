@@ -4,6 +4,7 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix dcso: <https://w3id.org/dcso/ns/core#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix dcs-lang: <https://w3id.org/dcso/id/iso639-3/> .
 
@@ -68,8 +69,12 @@
       {%- if "description" in project.keys() %}
       dct:description {{ project["description"]|tojson }} ;
       {%- endif %}
+      {%- if "start" in project.keys() %}
       dcso:start {{ project["start"]|tojson }}^^xsd:date ;
+      {%- endif %}
+      {%- if "end" in project.keys() %}
       dcso:end {{ project["end"]|tojson }}^^xsd:date ;
+      {%- endif %}
       {%- if "funding" in project.keys() and project["funding"]|length > 0 %}
       dcso:hasFunding
       {%- for funding in project["funding"] %}
@@ -95,6 +100,10 @@
     ] {{ ";" if loop.last else "," }}
   {%- endfor -%}
 {%- endif %}
+{#- ---------------- Datasets (DCSO core + DCAT) ----------------
+     dcat: = byteSize/downloadURL/accessURL (DCAT terms, not DCSO).
+     DCSO core has no AlternateIdentifier (alternates -> extra hasDatasetId)
+     and no HostId (host.host_id is not emitted). -#}
 {%- if "dataset" in dmp.keys() and dmp["dataset"]|length > 0 %}
   dcso:hasDataset
   {%- for dataset in dmp["dataset"] %}
@@ -104,18 +113,79 @@
           dcso:identifier_type {{ dataset["dataset_id"]["type"]|tojson }} ;
           dct:identifier {{ dataset["dataset_id"]["identifier"]|tojson }} ;
         ] ;
+      {%- if "alternate_identifier" in dataset.keys() and dataset["alternate_identifier"]|length > 0 %}
+      {#- DCSO core has no AlternateIdentifier class; represent each as an extra DatasetId. -#}
+      {%- for alt in dataset["alternate_identifier"] %}
+      dcso:hasDatasetId
+        [ a dcso:DatasetId ;
+          dcso:identifier_type {{ alt["type"]|tojson }} ;
+          dct:identifier {{ alt["identifier"]|tojson }} ;
+        ] ;
+      {%- endfor %}
+      {%- endif %}
       dct:title {{ dataset["title"]|tojson }} ;
       {%- if "description" in dataset.keys() %}
       dct:description {{ dataset["description"]|tojson }} ;
       {%- endif %}
       dcso:personalData {{ dataset["personal_data"]|tojson }} ;
       dcso:sensitiveData {{ dataset["sensitive_data"]|tojson }} ;
+      {%- if "data_quality_assurance" in dataset.keys() and dataset["data_quality_assurance"]|length > 0 %}
+      {%- for qa in dataset["data_quality_assurance"] %}
+      dcso:dataQualityAssurance {{ qa|tojson }} ;
+      {%- endfor %}
+      {%- endif %}
+      {%- if "metadata" in dataset.keys() and dataset["metadata"]|length > 0 %}
+      dcso:hasMetadata
+      {%- for md in dataset["metadata"] %}
+        [ a dcso:Metadata ;
+          dcso:hasMetadataStandardId
+            [ a dcso:MetadataStandardId ;
+              dcso:identifier_type {{ md["metadata_standard_id"]["type"]|tojson }} ;
+              dct:identifier {{ md["metadata_standard_id"]["identifier"]|tojson }} ;
+            ] ;
+          {%- if "description" in md.keys() %}
+          dct:description {{ md["description"]|tojson }} ;
+          {%- endif %}
+          {%- if "language" in md.keys() %}
+          dcso:language {{ md["language"]|tojson }} ;
+          {%- endif -%}
+        ] {{ ";" if loop.last else "," }}
+      {%- endfor -%}
+      {%- endif %}
       {%- if "distribution" in dataset.keys() and dataset["distribution"]|length > 0 %}
       dcso:hasDistribution
       {%- for distribution in dataset["distribution"] %}
         [ a dcso:Distribution ;
           dct:title {{ distribution["title"]|tojson }} ;
+          {%- if "data_access" in distribution.keys() %}
           dcso:dataAccess {{ distribution["data_access"]|tojson }} ;
+          {%- endif %}
+          {%- if "format" in distribution.keys() and distribution["format"]|length > 0 %}
+          {%- for fmt in distribution["format"] %}
+          dct:format {{ fmt|tojson }} ;
+          {%- endfor %}
+          {%- endif %}
+          {%- if "byte_size" in distribution.keys() %}
+          dcat:byteSize {{ distribution["byte_size"] }} ;
+          {%- endif %}
+          {%- if "download_url" in distribution.keys() %}
+          dcat:downloadURL <{{ distribution["download_url"] }}> ;
+          {%- endif %}
+          {%- if "access_url" in distribution.keys() %}
+          dcat:accessURL <{{ distribution["access_url"] }}> ;
+          {%- endif %}
+          {%- if "host" in distribution.keys() %}
+          dcso:hasHost
+            [ a dcso:Host ;
+              {%- if "title" in distribution["host"].keys() %}
+              dct:title {{ distribution["host"]["title"]|tojson }} ;
+              {%- endif %}
+              {%- if "url" in distribution["host"].keys() %}
+              dcso:url <{{ distribution["host"]["url"] }}> ;
+              {%- endif -%}
+              {#- host.host_id is not representable in DCSO core (no HostId class). -#}
+            ] ;
+          {%- endif %}
           {%- if "license" in distribution.keys() and distribution["license"]|length > 0 %}
           dcso:hasLicense
           {%- for license in distribution["license"] %}

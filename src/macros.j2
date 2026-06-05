@@ -1,3 +1,12 @@
+{#- Generic annotation reader: extract any annotation from a KM entity by key -#}
+{%- macro annotation(entity, key) -%}
+  {%- for ann in entity.annotations|default([]) -%}
+    {%- if ann.key == key -%}
+      {{ ann.value }}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endmacro -%}
+
 {%- macro integrationOrcid(reply) -%}
   {%- if reply and reply.value.value.type == "IntegrationType" -%}
     {%- if reply.value.value.raw -%}

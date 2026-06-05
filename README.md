@@ -13,6 +13,16 @@ This template is available through [DSW Registry](https://registry.ds-wizard.org
 This document template for DSW is available as open-source via GitHub Repository [ds-wizard/madmp-template](https://github.com/ds-wizard/madmp-template), you can [report issues](https://github.com/ds-wizard/madmp-template/issues) there and fork it for customisations or contributions.
 
 
+## AI-Assisted Development
+
+Some recent changes in this repository were developed with AI-assisted tooling. Proposed code, template mappings, local tooling, and documentation changes were reviewed and adapted by human contributors before being kept in the repository.
+
+For the work captured in this thread, the following AI tooling was used:
+
+- Agent: GitHub Copilot coding agent
+- Models: Claude Opus 4.7, GPT-5.4
+
+
 ### Contributors
 
 * **Marek Suchánek** <[marek.suchanek@ds-wizard.org](mailto:marek.suchanek@ds-wizard.org)>
@@ -24,9 +34,20 @@ This document template for DSW is available as open-source via GitHub Repository
 * **Jana Martínková** <[jana.martinkova@ds-wizard.org](mailto:jana.martinkova@ds-wizard.org)>
   * ORCID: [0000-0001-8575-6533](https://orcid.org/0000-0001-8575-6533)
   * GitHub: [@jmartinkova](https://github.com/jmartinkova)
+* **Michael Dondrup** <[mdondrup@gmail.com](mailto:mdondrup@gmail.com)>
+  * ORCID: [0000-0002-2371-5928](https://orcid.org/0000-0002-2371-5928)
+  * GitHub: [@mdondrup](https://github.com/mdondrup)
 
 
 ## Changelog
+
+### 1.29.0
+
+- Reworked the maDMP JSON mapping to use annotation-based `extract_replies` navigation instead of UUID-based lookups
+- Added compatibility for `research.data.no:norway-generic:1.2.0`
+- Simplified the mapping by removing the legacy `_uuids.j2` and `_keys.j2` helper files
+- Improved ethical issues export for the current KM answer shapes, including boolean Yes/No handling and free-text details
+- Added a local render/test toolchain under `tools/` for strict rendering, reply dumping, and KM inspection
 
 ### 1.28.0
 

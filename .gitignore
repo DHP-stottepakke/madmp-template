@@ -1,5 +1,27 @@
 env/
 .env
+.venv/
 template.zip
 template*.zip
 .DS_Store
+__pycache__/
+*.pyc
+out.json
+out.ttl
+replies.json
+
+# Additional local render outputs
+out_input_flag.json
+
+# Local DSW project exports (machine-specific test data)
+DSW-norway-export.json
+LiesFaultProjectExport.json
+dsw_root_2.8.0_json_extraction_demo.json
+
+# Downloaded/local KM payloads
+*.km
+
+# Ad-hoc analysis outputs
+results_in_scope_collisions.txt
+results_in_scope_collisions_updated.txt
+
