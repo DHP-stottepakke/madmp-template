@@ -128,7 +128,7 @@
 {%- set projectAbstract = "" -%}
 {%- if research.abstract -%}
   {%- if research.abstract._value == "enterTextualProject" and research.abstract.enterAbstractDescription -%}
-    {%- set projectAbstract = research.abstract.enterAbstractDescription._value -%}
+    {%- set projectAbstract = research.abstract.enterAbstractDescription.markdown_plain} -%}
   {%- elif research.abstract._value == "linkProjectProposal" and research.abstract.linkExternalInformation -%}
     {%- set projectAbstract = research.abstract.linkExternalInformation._value -%}
   {%- endif -%}
@@ -220,6 +220,8 @@
 {%- set datadoc = replies.creatingData -%}
 
 {%- set datasets = [] -%}
+}
+
 {%- for ds in archiving.distributions -%}
   {%- set dsTitle = ds.dataset._value if ds.dataset else "(unnamed dataset)" -%}
 
@@ -384,7 +386,7 @@
   {%- set distribution = {"title": dsTitle} -%}
   {%- if accessVal -%}{%- do distribution.update({"data_access": accessVal}) -%}{%- endif -%}
   {%- if ds.fileFormatDataset and ds.fileFormatDataset._value -%}
-    {%- do distribution.update({"format": [ds.fileFormatDataset._value]}) -%}
+    {%- do distribution.update({"format": [ds.fileFormatDataset.markdown_plain]}) -%}
   {%- endif -%}
 
   {#- byte_size: the questionnaire captures size in GB (question text: "…in GB").

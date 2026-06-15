@@ -41,6 +41,11 @@ For the work captured in this thread, the following AI tooling was used:
 
 ## Changelog
 
+### 1.29.1
+
+- Fixed text value type questions rendering with markdown
+
+
 ### 1.29.0
 
 - Reworked the maDMP JSON mapping to use annotation-based `extract_replies` navigation instead of UUID-based lookups
