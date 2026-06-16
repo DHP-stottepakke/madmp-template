@@ -1,7 +1,7 @@
 {
   "organizationId": "research.data.no",
   "templateId": "rda-madmp",
-  "version": "1.29.0",
+  "version": "1.29.1",
   "name": "maDMP (RDA DMP Common Standard)",
   "description": "Machine-actionable DMP according to RDA DMP Common Standard 1.2",
   "license": "Apache-2.0",

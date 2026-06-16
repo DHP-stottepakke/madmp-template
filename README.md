@@ -45,6 +45,12 @@ For the work captured in this thread, the following AI tooling was used:
 
 ## Changelog
 
+
+### 1.29.1
+
+- Fixed text value type questions rendering with markdown
+- Export of additional information following [RDA DCS 1.2](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/releases/tag/v1.2) 
+
 ### 1.29.0
 
 - Reworked the maDMP JSON mapping to use annotation-based `extract_replies` navigation instead of UUID-based lookups

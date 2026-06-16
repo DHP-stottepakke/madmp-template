@@ -1,0 +1,74 @@
+{#- Generic annotation reader: extract any annotation from a KM entity by key -#}
+{%- macro annotation(entity, key) -%}
+  {%- for ann in entity.annotations|default([]) -%}
+    {%- if ann.key == key -%}
+      {{ ann.value }}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro integrationOrcid(reply) -%}
+  {%- if reply and reply.value.value.type == "IntegrationType" -%}
+    {%- if reply.value.value.raw -%}
+      {{ reply.value.value.raw["orcid-id"] }}
+    {%- else -%}
+      {# Extract ORCID number from the value string #}
+      {%- set value = reply.value.value.value %}
+      {%- set orcid = value.split('ORCID:')[-1].strip().split()[0]|replace("**", "")|markdown|replace("<p>", "")|replace("</p>", "") if 'ORCID:' in value else None %}
+      {%- if orcid and orcid|length >= 15 -%}
+        {{ orcid }}
+      {%- endif -%}
+    {%- endif -%}
+  {%- elif reply and reply.value.value.type == "PlainType" -%}
+   {{ reply.value.value.value }}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro integrationFairSharing(reply) -%}
+  {%- if reply and reply.value.value.type == "IntegrationType" -%}
+    {%- if reply.value.value.raw -%}
+      {%- set replyObject = reply.value.value.raw -%}
+      {%- if replyObject.doi -%}
+        "{{ replyObject.name }} (https://doi.org/{{ replyObject.doi }})"
+      {%- else -%}
+        "{{ replyObject.name }} (https://fairsharing.org/{{ replyObject.id }})"
+      {%- endif -%}
+    {%- else -%}
+      "{{ reply.value.value.value.rsplit(" ![]")[0]|replace("**", "")|markdown|replace("<p>", "")|replace("</p>", "") }}"
+    {%- endif -%}
+  {%- elif reply and reply.value.value.type == "PlainType" -%}
+    "{{ reply.value.value.value }}"
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro integrationCrossref(reply) -%}
+  {%- if reply and reply.value.value.type == "IntegrationType" -%}
+    {%- if reply.value.value.raw -%}
+      {%- set replyObject = reply.value.value.raw -%}
+      {{ replyObject.uri }}
+    {%- else -%}
+      {{ reply.value.value.value.rsplit(" ![]")[0]|replace("**", "")|markdown|replace("<p>", "")|replace("</p>", "") }}
+    {%- endif -%}
+  {%- elif reply and reply.value.value.type == "PlainType" -%}
+    {{ reply.value.value.value }}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro integrationCurrency(reply) -%}
+  {%- if reply and reply.value.value.type == "IntegrationType" -%}
+    {%- if reply.value.value.raw -%}
+      {%- set replyObject = reply.value.value.raw -%}
+      {{replyObject.code}}
+    {%- else -%}
+      {{ reply.value.value.value.rsplit(" ![]")[0]|replace("**", "")|markdown|replace("<p>", "")|replace("</p>", "") }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro integrationValue(reply) -%}
+  {%- if reply and reply.value.value.type == "IntegrationLegacyType" -%}
+    {{ reply.value.value.value.rsplit(" ![]")[0] }}
+  {%- elif reply %}
+    {{ reply.value.value.value }}
+  {%- endif -%}
+{%- endmacro -%}
