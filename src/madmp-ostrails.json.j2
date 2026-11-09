@@ -1,0 +1,5 @@
+{#- maDMP according to the OSTrails Application Profile (RDA DMP Common Standard 1.2 with extensions): https://github.com/OSTrails/ostrails-madmp-ap -#}
+{%- set dcsVersion = "1.2" -%}
+{%- set dcsProfile = "ostrails" -%}
+{%- import "src/_mapping.j2" as mapping with context -%}
+{{ mapping.madmp|tojson(4) }}

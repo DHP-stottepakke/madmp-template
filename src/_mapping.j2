@@ -16,9 +16,25 @@
     - MultiChoiceQuestion -> [ { _uuid, _label, _value, _path } ]
     - ListQuestion        -> [ { _uuid, _path, ...childQuestions } ]
     - Unanswered          -> None (or [] for list/multichoice with json.key)
+
+  Schema: dcsVersion ("1.0" to "1.3") and dcsProfile ("dcs" or "ostrails", based on 1.2)
+  are set by the entry file of the format (src/madmp-*.json.j2); members that a version
+  does not define are left out, members it requires gate the parent object.
+
+  Localization: prose is wrapped in _() (newstyle gettext). DSW renders with autoescape,
+  so values passed to _() and values joined with translated texts are marked |safe
+  (otherwise they would be HTML-escaped in the JSON output).
 -#}
+{%- import "src/_languages.j2" as languages -%}
 {%- set dc = ctx|to_context_obj -%}
 {%- set replies = dc|extract_replies -%}
+{%- set dcsMinor = dcsVersion.split(".")[1]|int -%}
+{%- set isOstrails = dcsProfile == "ostrails" -%}
+
+{#- language of the texts: the locale the document is rendered with, else the template's (en) -#}
+{%- set localeCode = (dc.document.locale.code if dc.document and dc.document.locale else "en")|lower|replace("_", "-") -%}
+{%- set localeLanguage = localeCode.split("-")[0] -%}
+{%- set dmpLanguage = languages.iso639_3.get(localeLanguage) or (localeLanguage if localeLanguage in languages.iso639_3.values() else "eng") -%}
 {%- set admin     = replies.administrativeInformation -%}
 {%- set research  = replies.researchProjectChapter -%}
 {%- set legal     = replies.legalEthicalAspectsChapter -%}
@@ -26,13 +42,22 @@
 {%- set respres   = replies.responsibilitiesResourcesChapter -%}
 
 {#- ---------------- DMP-level metadata ---------------- -#}
-{%- set madmpDescription = "This maDMP has been created using "
-    ~ dc.config.service_name ~ " (" ~ dc.config.service_domain_name
-    ~ ") and is based on knowledge model " ~ dc.pkg.name
-    ~ " (" ~ [dc.pkg.organization_id, dc.pkg.km_id, dc.pkg.version]|join(":")
-    ~ "). The questionnaire used for this DMP is identified by UUID \""
-    ~ ctx.project.uuid ~ "\" within " ~ ctx.config.clientUrl
-    ~ " " ~ dc.config.service_name_short ~ " instance." -%}
+{#- TRANSLATORS: description of the DMP; service = e.g. "Data Stewardship Wizard", domain = e.g. "ds-wizard.org", instance = e.g. "DSW" -#}
+{%- set madmpDescription = _('This maDMP has been created using %(service)s (%(domain)s) and is based on knowledge model %(km)s (%(km_id)s). The questionnaire used for this DMP is identified by UUID "%(uuid)s" within %(url)s %(instance)s instance.',
+  service=dc.config.service_name|safe,
+  domain=dc.config.service_domain_name|safe,
+  km=dc.km_package.name|safe,
+  km_id=[dc.km_package.id, dc.km_package.version]|join(":")|safe,
+  uuid=ctx.project.uuid|safe,
+  url=ctx.config.clientUrl|safe,
+  instance=dc.config.service_name_short|safe) -%}
+
+{#- Text of a reply without its Markdown (e.g. of a text question). Takes an extracted
+    object (with _path) and reads the reply object, which has markdown_plain. -#}
+{%- macro plainText(obj) -%}
+  {%- set reply = dc.questionnaire.replies.get(obj._path) if obj else none -%}
+  {%- if reply -%}{{ reply.markdown_plain|safe }}{%- endif -%}
+{%- endmacro -%}
 
 {%- set madmpDmpId = {
   "identifier": ctx.config.clientUrl ~ "/projects/" ~ ctx.project.uuid,
@@ -79,7 +104,7 @@
     {%- for nm in (aff.names or []) -%}
       {%- if "ror_display" in (nm.types or []) -%}{%- set ns.affName = nm.value -%}{%- endif -%}
     {%- endfor -%}
-    {%- if ns.affName -%}
+    {%- if ns.affName and dcsMinor >= 2 -%}{#- affiliation since DCS 1.2 -#}
       {%- do affiliations.append({"affiliation_id": {"identifier": aff.id, "type": "ror"},
                                   "name": ns.affName}) -%}
     {%- endif -%}
@@ -151,7 +176,7 @@
     {%- set fundingStatus = statusMap.get(f.status._value, "") if f.status else "" -%}
     {%- set grantNumber = f.grantNumber._value if f.grantNumber else "" -%}
 
-    {%- if funderUrl -%}
+    {%- if funderUrl and (grantNumber or dcsMinor >= 1) -%}{#- DCS 1.0 requires grant_id -#}
       {%- set entry = {
         "funder_id": {"identifier": funderUrl, "type": "url"}
       } -%}
@@ -167,7 +192,7 @@
 {%- set projectAbstract = "" -%}
 {%- if research.abstract -%}
   {%- if research.abstract._value == "enterTextualProject" and research.abstract.enterAbstractDescription -%}
-    {%- set projectAbstract = research.abstract.enterAbstractDescription._value -%}
+    {%- set projectAbstract = plainText(research.abstract.enterAbstractDescription)|trim -%}
   {%- elif research.abstract._value == "linkProjectProposal" and research.abstract.linkExternalInformation -%}
     {%- set projectAbstract = research.abstract.linkExternalInformation._value -%}
   {%- endif -%}
@@ -177,7 +202,7 @@
 {%- set projectName  = (research.name._value if research.name else "") or ctx.project.name -%}
 {%- set projectStart = research.startDate._value if research.startDate else "" -%}
 {%- set projectEnd   = research.endDate._value if research.endDate else "" -%}
-{%- if projectName -%}
+{%- if projectName and (dcsMinor >= 1 or (projectStart and projectEnd)) -%}{#- DCS 1.0 requires start and end -#}
   {#- RDA DCS project field order: description, end, funding, start, title. -#}
   {%- set project = {} -%}
   {%- if projectAbstract -%}{%- do project.update({"description": projectAbstract}) -%}{%- endif -%}
@@ -198,13 +223,16 @@
 
 {%- if legal.requiresEthicalApproval and legal.requiresEthicalApproval._value is sameas true -%}
   {%- do ethicalIssues.append("ethical-approval") -%}
-  {%- do ethicalDesc.append("The project requires ethical pre-approval.") -%}
+  {%- do ethicalDesc.append(_('The project requires ethical pre-approval.')) -%}
   {%- for au in (legal.requiresEthicalApproval.authority or []) -%}
     {%- set parts = [] -%}
-    {%- if au.inspectorateAuthority and au.inspectorateAuthority._value -%}{%- do parts.append(au.inspectorateAuthority._value) -%}{%- endif -%}
-    {%- if au.status and au.status._label -%}{%- do parts.append("status: " ~ au.status._label) -%}{%- endif -%}
-    {%- if au.caseNumber and au.caseNumber._value -%}{%- do parts.append("case no. " ~ au.caseNumber._value) -%}{%- endif -%}
-    {%- if parts|length > 0 -%}{%- do ethicalDesc.append("Approval authority: " ~ parts|join(", ") ~ ".") -%}{%- endif -%}
+    {%- if au.inspectorateAuthority and au.inspectorateAuthority._value -%}{%- do parts.append(au.inspectorateAuthority._value|safe) -%}{%- endif -%}
+    {#- TRANSLATORS: status of an ethical approval as the knowledge model names it -#}
+    {%- if au.status and au.status._label -%}{%- do parts.append(_('status: %(status)s', status=au.status._label|safe)) -%}{%- endif -%}
+    {#- TRANSLATORS: case number of an ethical approval -#}
+    {%- if au.caseNumber and au.caseNumber._value -%}{%- do parts.append(_('case no. %(case)s', case=au.caseNumber._value|safe)) -%}{%- endif -%}
+    {#- TRANSLATORS: authority = e.g. "REK, status: Granted, case no. 12345" -#}
+    {%- if parts|length > 0 -%}{%- do ethicalDesc.append(_('Approval authority: %(authority)s.', authority=parts|join(", ")|safe)) -%}{%- endif -%}
   {%- endfor -%}
 {%- endif -%}
 
@@ -215,28 +243,29 @@
     {%- do ethicalIssues.append("personal-data") -%}
     {#- The KM's single affirmative answer is "Yes (or uncertain)" (json.value "uncertain");
         per request it is treated as an affirmative "yes". -#}
-    {%- do ethicalDesc.append("Personal data will be collected or processed.") -%}
+    {%- do ethicalDesc.append(_('Personal data will be collected or processed.')) -%}
     {%- if pcp.documentParticipantsInformation and pcp.documentParticipantsInformation._value -%}
-      {%- do ethicalDesc.append("Participant information: " ~ pcp.documentParticipantsInformation._value) -%}
+      {%- do ethicalDesc.append(_('Participant information: %(info)s', info=pcp.documentParticipantsInformation._value|safe)) -%}
     {%- endif -%}
     {#- privacy considerations (composed from the personal-data branch) -#}
     {%- set pc = pcp.privacyConsiderations -%}
     {%- if pc -%}
+      {#- TRANSLATORS: the values in the following sentences are answer labels of the knowledge model -#}
       {%- if pc.legalBasis and pc.legalBasis._label -%}
-        {%- do ethicalDesc.append("Legal basis for processing: " ~ pc.legalBasis._label ~ ".") -%}
+        {%- do ethicalDesc.append(_('Legal basis for processing: %(basis)s.', basis=pc.legalBasis._label|safe)) -%}
       {%- endif -%}
       {%- if pc.dataControllers and pc.dataControllers._label -%}
-        {%- do ethicalDesc.append("Data controller(s): " ~ pc.dataControllers._label ~ ".") -%}
+        {%- do ethicalDesc.append(_('Data controller(s): %(controllers)s.', controllers=pc.dataControllers._label|safe)) -%}
       {%- endif -%}
       {%- if pc.needDpia and pc.needDpia.dpiaDone and pc.needDpia.dpiaDone._label -%}
-        {%- do ethicalDesc.append("Data protection impact assessment carried out: " ~ pc.needDpia.dpiaDone._label ~ ".") -%}
+        {%- do ethicalDesc.append(_('Data protection impact assessment carried out: %(answer)s.', answer=pc.needDpia.dpiaDone._label|safe)) -%}
       {%- endif -%}
       {%- if pc.safeguards and pc.safeguards.transferOutsideEu -%}
         {%- if pc.safeguards.transferOutsideEu._label -%}
-          {%- do ethicalDesc.append("Transfer of personal data outside the EU/EEA: " ~ pc.safeguards.transferOutsideEu._label ~ ".") -%}
+          {%- do ethicalDesc.append(_('Transfer of personal data outside the EU/EEA: %(answer)s.', answer=pc.safeguards.transferOutsideEu._label|safe)) -%}
         {%- endif -%}
         {%- if pc.safeguards.transferOutsideEu.dataProtectionMeasures and pc.safeguards.transferOutsideEu.dataProtectionMeasures._value -%}
-          {%- do ethicalDesc.append("Data protection measures for transfer: " ~ pc.safeguards.transferOutsideEu.dataProtectionMeasures._value) -%}
+          {%- do ethicalDesc.append(_('Data protection measures for transfer: %(measures)s', measures=pc.safeguards.transferOutsideEu.dataProtectionMeasures._value|safe)) -%}
         {%- endif -%}
       {%- endif -%}
     {%- endif -%}
@@ -249,15 +278,15 @@
   {%- if sitVal in ("yes", "uncertain") -%}
     {%- do ethicalIssues.append("sensitive-information") -%}
     {%- if sitVal == "yes" -%}
-      {%- do ethicalDesc.append("The project handles sensitive information beyond GDPR special categories.") -%}
+      {%- do ethicalDesc.append(_('The project handles sensitive information beyond GDPR special categories.')) -%}
     {%- else -%}
-      {%- do ethicalDesc.append("It is uncertain whether the project handles sensitive information beyond GDPR special categories.") -%}
+      {%- do ethicalDesc.append(_('It is uncertain whether the project handles sensitive information beyond GDPR special categories.')) -%}
     {%- endif -%}
     {%- if sit.brieflyDescribeSensitive and sit.brieflyDescribeSensitive._value -%}
-      {%- do ethicalDesc.append("Sensitive information: " ~ sit.brieflyDescribeSensitive._value) -%}
+      {%- do ethicalDesc.append(_('Sensitive information: %(info)s', info=sit.brieflyDescribeSensitive._value|safe)) -%}
     {%- endif -%}
     {%- if sit.applicableLegalEthical and sit.applicableLegalEthical._value -%}
-      {%- do ethicalDesc.append("Applicable legal/ethical framework: " ~ sit.applicableLegalEthical._value) -%}
+      {%- do ethicalDesc.append(_('Applicable legal/ethical framework: %(framework)s', framework=sit.applicableLegalEthical._value|safe)) -%}
     {%- endif -%}
   {%- endif -%}
 {%- endif -%}
@@ -291,18 +320,18 @@
 {%- set rightsParts = [] -%}
 {%- if datadoc and datadoc.collectedDataRights -%}
   {%- set cdr = datadoc.collectedDataRights -%}
-  {%- do rightsParts.append("Rights holder: " ~ cdr._label ~ ".") -%}
+  {%- do rightsParts.append(_('Rights holder: %(holder)s.', holder=cdr._label|safe)) -%}
   {%- if cdr._value == "thereExternalRightsholder" and cdr.holdsRightsConditions and cdr.holdsRightsConditions._value -%}
-    {%- do rightsParts.append("Conditions set by the external rightsholder: " ~ cdr.holdsRightsConditions._value ~ ".") -%}
+    {%- do rightsParts.append(_('Conditions set by the external rightsholder: %(conditions)s.', conditions=cdr.holdsRightsConditions._value|safe)) -%}
   {%- endif -%}
 {%- endif -%}
 {%- if datadoc and datadoc.dataUseRestrictions -%}
   {%- set dur = datadoc.dataUseRestrictions -%}
-  {%- do rightsParts.append("Use restrictions: " ~ dur._label ~ ".") -%}
+  {%- do rightsParts.append(_('Use restrictions: %(answer)s.', answer=dur._label|safe)) -%}
   {%- if dur.restrictions -%}
     {%- set rlabels = dur.restrictions | map(attribute='_label') | list -%}
     {%- if rlabels|length > 0 -%}
-      {%- do rightsParts.append("Restriction categories: " ~ rlabels|join(", ") ~ ".") -%}
+      {%- do rightsParts.append(_('Restriction categories: %(categories)s.', categories=rlabels|join(", ")|safe)) -%}
     {%- endif -%}
   {%- endif -%}
 {%- endif -%}
@@ -316,20 +345,22 @@
 {%- if archiving.listHaveDelete and archiving.listHaveDelete._value == "certainDataWas" -%}
   {%- for dl in (archiving.listHaveDelete.specifyListDelete or []) -%}
     {%- set seg = [] -%}
-    {%- if dl.briefDescriptionSet and dl.briefDescriptionSet._value -%}{%- do seg.append(dl.briefDescriptionSet._value) -%}{%- endif -%}
-    {%- if dl.reasonsDeletion and dl.reasonsDeletion._value -%}{%- do seg.append("reason: " ~ dl.reasonsDeletion._value) -%}{%- endif -%}
-    {%- if dl.timepointDeletion and dl.timepointDeletion._value -%}{%- do seg.append("timepoint: " ~ dl.timepointDeletion._value) -%}{%- endif -%}
+    {%- if dl.briefDescriptionSet and dl.briefDescriptionSet._value -%}{%- do seg.append(dl.briefDescriptionSet._value|safe) -%}{%- endif -%}
+    {%- if dl.reasonsDeletion and dl.reasonsDeletion._value -%}{%- do seg.append(_('reason: %(reason)s', reason=dl.reasonsDeletion._value|safe)) -%}{%- endif -%}
+    {%- if dl.timepointDeletion and dl.timepointDeletion._value -%}{%- do seg.append(_('timepoint: %(timepoint)s', timepoint=dl.timepointDeletion._value|safe)) -%}{%- endif -%}
     {%- if seg|length > 0 -%}{%- do deletionParts.append(seg|join(", ")) -%}{%- endif -%}
   {%- endfor -%}
 {%- endif -%}
 {%- set deletionSummary = "" -%}
 {%- if deletionParts|length > 0 -%}
-  {%- set deletionSummary = "Data scheduled for deletion: " ~ deletionParts|join("; ") ~ "." -%}
+  {#- TRANSLATORS: data = e.g. "raw recordings, reason: personal data, timepoint: 2027; ..." -#}
+  {%- set deletionSummary = _('Data scheduled for deletion: %(data)s.', data=deletionParts|join("; ")|safe) -%}
 {%- endif -%}
 
 {%- set datasets = [] -%}
 {%- for ds in archiving.distributions -%}
-  {%- set dsTitle = ds.dataset._value if ds.dataset else "(unnamed dataset)" -%}
+  {#- TRANSLATORS: title of a dataset that has no name -#}
+  {%- set dsTitle = ds.dataset._value if (ds.dataset and ds.dataset._value) else _('(unnamed dataset)') -%}
 
   {#- ---------- dataset_id + alternate_identifier (three PID sources) ---------- -#}
   {#- a) Import DOI information from DataCite (DataverseNO, Zenodo, …)
@@ -343,9 +374,9 @@
 
       {#- (a) DataCite DOI -#}
       {%- if epi._value == "importDoiInformation" and epi.doiSearch2 and epi.doiSearch2._raw -%}
-        {%- set dc = epi.doiSearch2._raw -%}
+        {%- set doiRaw = epi.doiSearch2._raw -%}
         {#- DataCite REST exposes the DOI as `id` (and/or attributes.doi), not a bare `doi`. -#}
-        {%- set doiId = dc.id if dc.id else (dc.attributes.doi if dc.attributes else None) -%}
+        {%- set doiId = doiRaw.id if doiRaw.id else (doiRaw.attributes.doi if doiRaw.attributes else None) -%}
         {%- if doiId -%}
           {%- set doiUrl = doiId if doiId.startswith("http") else ("https://doi.org/" ~ doiId) -%}
           {%- set dsId = {"identifier": doiUrl, "type": "doi"} -%}
@@ -389,7 +420,7 @@
   {%- set isReused = false -%}
   {%- if ds.description -%}
     {%- if ds.description._value == "enterFreeText" and ds.description.briefDescriptionDataset and ds.description.briefDescriptionDataset._value -%}
-      {%- do descParts.append(ds.description.briefDescriptionDataset._value) -%}
+      {%- do descParts.append(plainText(ds.description.briefDescriptionDataset)|trim) -%}
 
     {%- elif ds.description._value == "selectInformationChapter" -%}
 
@@ -401,10 +432,10 @@
              if (lst and ref) else None -%}
         {%- if item -%}
           {%- if item.dataset and item.dataset._value -%}
-            {%- do descParts.append("Data originating from: " ~ item.dataset._value ~ ".") -%}
+            {%- do descParts.append(_('Data originating from: %(source)s.', source=item.dataset._value|safe)) -%}
           {%- endif -%}
           {%- if item.applicableAdditionalDescription2 and item.applicableAdditionalDescription2._value -%}
-            {%- do descParts.append(item.applicableAdditionalDescription2._value) -%}
+            {%- do descParts.append(item.applicableAdditionalDescription2._value|safe) -%}
           {%- endif -%}
           {%- if item.qualityProcessesApplied -%}
             {%- for qp in item.qualityProcessesApplied -%}{%- do qa.append(qp._label) -%}{%- endfor -%}
@@ -431,10 +462,10 @@
         {%- if item -%}
           {%- set isReused = true -%}
           {%- if item.dataset_1 and item.dataset_1._value -%}
-            {%- do descParts.append("Data originating from: " ~ item.dataset_1._value ~ ".") -%}
+            {%- do descParts.append(_('Data originating from: %(source)s.', source=item.dataset_1._value|safe)) -%}
           {%- endif -%}
           {%- if item.collectionMethodology and item.collectionMethodology._value -%}
-            {%- do descParts.append(item.collectionMethodology._value) -%}
+            {%- do descParts.append(item.collectionMethodology._value|safe) -%}
           {%- endif -%}
           {%- if item.integrityQualityMeasures and item.integrityQualityMeasures._value -%}
             {%- do qa.append(item.integrityQualityMeasures._value) -%}
@@ -475,6 +506,7 @@
 
   {#- ---------- distribution: access + license ---------- -#}
   {%- set accessVal = accessMap.get(ds.access._value, "") if ds.access else "" -%}
+  {%- if accessVal == "shared" and dcsMinor >= 3 -%}{%- set accessVal = "restricted" -%}{%- endif -%}{#- DCS 1.3 deprecated "shared" -#}
 
   {%- set licenses = [] -%}
   {%- if ds.licenseDataset -%}
@@ -501,8 +533,9 @@
       {%- endif -%}
     {%- endif -%}
     {#- Emit the license whenever a reference is known. start_date is included only
-        when the questionnaire provides it (a license without a starting date is kept
-        rather than dropped). -#}
+        when the questionnaire provides it: a license without a starting date is kept
+        rather than dropped, although start_date is required by every DCS version
+        (deliberate deviation: the output is then not schema-valid). -#}
     {%- if licenseRef -%}
       {%- set lic = {"license_ref": licenseRef} -%}
       {%- if licenseStart -%}{%- do lic.update({"start_date": licenseStart}) -%}{%- endif -%}
@@ -544,11 +577,13 @@
   {%- set hasHost = ((repo and (repo.description or repo.url or repo.name or repo.homepage)) or hostTitle) -%}
   {%- set host = {} -%}
   {%- if repo and repo.description -%}{%- do host.update({"description": repo.description}) -%}{%- endif -%}
-  {%- if repo and repo.url -%}{%- do host.update({"host_id": [{"identifier": repo.url, "type": "url"}]}) -%}{%- endif -%}
+  {%- if repo and repo.url and dcsMinor >= 2 -%}{%- do host.update({"host_id": [{"identifier": repo.url, "type": "url"}]}) -%}{%- endif -%}
   {%- if hasHost and dsId.type == "doi" -%}{%- do host.update({"pid_system": ["doi"]}) -%}{%- endif -%}
   {%- if repo and repo.name -%}{%- do host.update({"title": repo.name}) -%}{%- endif -%}
   {%- if repo and repo.homepage -%}{%- do host.update({"url": repo.homepage}) -%}{%- endif -%}
   {%- if (not repo) and hostTitle -%}{%- do host.update({"title": hostTitle}) -%}{%- endif -%}
+  {#- title is required; url is required until DCS 1.3 (and in OSTrails, based on 1.2) -#}
+  {%- set hostValid = host.title and (host.url or dcsMinor >= 3) -%}
 
   {#- ---------- assemble distribution (RDA DCS field order:
        access_url, byte_size, data_access, download_url, format, host, license, title) ----------
@@ -563,7 +598,7 @@
   {%- if accessVal -%}{%- do distribution.update({"data_access": accessVal}) -%}{%- endif -%}
   {%- if dsId.identifier and dsId.identifier.startswith("http") -%}{%- do distribution.update({"download_url": dsId.identifier}) -%}{%- endif -%}
   {%- if ds.fileFormatDataset and ds.fileFormatDataset._value -%}{%- do distribution.update({"format": [ds.fileFormatDataset._value]}) -%}{%- endif -%}
-  {%- if host -%}{%- do distribution.update({"host": host}) -%}{%- endif -%}
+  {%- if hostValid -%}{%- do distribution.update({"host": host}) -%}{%- endif -%}
   {%- if licenses|length > 0 -%}{%- do distribution.update({"license": licenses}) -%}{%- endif -%}
   {%- do distribution.update({"title": dsTitle}) -%}
 
@@ -584,25 +619,29 @@
   {%- set presParts = [] -%}
   {%- if ds.hasBeenArchived -%}
     {%- if ds.hasBeenArchived._value == "trustworthyResearchData" -%}
-      {%- do presParts.append("The data will be deposited in a trustworthy research data repository.") -%}
+      {%- do presParts.append(_('The data will be deposited in a trustworthy research data repository.')) -%}
     {%- elif ds.hasBeenArchived._value == "otherSolution"
              and ds.hasBeenArchived.descriptionPreservationStrategy
              and ds.hasBeenArchived.descriptionPreservationStrategy._value -%}
-      {%- do presParts.append(ds.hasBeenArchived.descriptionPreservationStrategy._value) -%}
+      {%- do presParts.append(ds.hasBeenArchived.descriptionPreservationStrategy._value|safe) -%}
     {%- endif -%}
   {%- endif -%}
   {%- if chosen and chosen.typeOfArchive -%}
-    {%- do presParts.append("Archive type: " ~ chosen.typeOfArchive._label ~ ".") -%}
+    {%- do presParts.append(_('Archive type: %(type)s.', type=chosen.typeOfArchive._label|safe)) -%}
     {%- if chosen.typeOfArchive._value == "specialPurpose" and chosen.typeOfArchive.longTermSupport -%}
-      {%- do presParts.append("Long-term support beyond the project: " ~ chosen.typeOfArchive.longTermSupport._label ~ ".") -%}
+      {%- do presParts.append(_('Long-term support beyond the project: %(answer)s.', answer=chosen.typeOfArchive.longTermSupport._label|safe)) -%}
     {%- endif -%}
   {%- endif -%}
   {%- if ds.retention -%}
     {%- if ds.retention._value == "asLongAsPossible" -%}
-      {%- do presParts.append("Data will be retained as long as technically possible.") -%}
+      {%- do presParts.append(_('Data will be retained as long as technically possible.')) -%}
     {%- elif ds.retention._value == "fixedPeriod" -%}
       {%- set per = ds.retention.period._value if ds.retention.period else None -%}
-      {%- do presParts.append("Data will be retained for a fixed period" ~ ((" (" ~ per ~ ")") if per else "") ~ ".") -%}
+      {%- if per -%}
+        {%- do presParts.append(_('Data will be retained for a fixed period (%(period)s).', period=per|safe)) -%}
+      {%- else -%}
+        {%- do presParts.append(_('Data will be retained for a fixed period.')) -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endif -%}
   {%- if deletionSummary -%}
@@ -615,16 +654,16 @@
        is_reused, metadata, personal_data, preservation_statement, rights, sensitive_data,
        technical_resource, title, type) ---------- -#}
   {%- set dataset = {} -%}
-  {%- if altIds|length > 0      -%}{%- do dataset.update({"alternate_identifier": altIds}) -%}{%- endif -%}
+  {%- if altIds|length > 0 and dcsMinor >= 2 -%}{%- do dataset.update({"alternate_identifier": altIds}) -%}{%- endif -%}
   {%- if qa|length > 0          -%}{%- do dataset.update({"data_quality_assurance": qa}) -%}{%- endif -%}
   {%- do dataset.update({"dataset_id": dsId}) -%}
   {%- if dsDescription          -%}{%- do dataset.update({"description": dsDescription}) -%}{%- endif -%}
-  {%- do dataset.update({"distribution": [distribution]}) -%}
-  {%- if isReused               -%}{%- do dataset.update({"is_reused": true}) -%}{%- endif -%}
+  {%- if accessVal             -%}{%- do dataset.update({"distribution": [distribution]}) -%}{%- endif -%}{#- data_access is required -#}
+  {%- if isReused and dcsMinor >= 2 -%}{%- do dataset.update({"is_reused": true}) -%}{%- endif -%}
   {%- if metadataStd|length > 0 -%}{%- do dataset.update({"metadata": metadataStd}) -%}{%- endif -%}
   {%- do dataset.update({"personal_data": personalData}) -%}
   {%- if preservationStatement  -%}{%- do dataset.update({"preservation_statement": preservationStatement}) -%}{%- endif -%}
-  {%- if rightsStatement        -%}{%- do dataset.update({"rights": rightsStatement}) -%}{%- endif -%}
+  {%- if rightsStatement and dcsMinor >= 2 -%}{%- do dataset.update({"rights": rightsStatement}) -%}{%- endif -%}
   {%- do dataset.update({"sensitive_data": sensitiveData}) -%}
   {%- if techResources|length>0 -%}{%- do dataset.update({"technical_resource": techResources}) -%}{%- endif -%}
   {%- do dataset.update({"title": dsTitle}) -%}
@@ -642,16 +681,16 @@
 {%- if archiving.listHaveDelete and archiving.listHaveDelete._value == "certainDataWas" -%}
   {%- for it in (archiving.listHaveDelete.specifyListDelete or []) -%}
     {%- set delTitle = it.briefDescriptionSet._value
-         if (it.briefDescriptionSet and it.briefDescriptionSet._value) else "Data scheduled for deletion" -%}
+         if (it.briefDescriptionSet and it.briefDescriptionSet._value) else _('Data scheduled for deletion') -%}
     {%- set delReason = "" -%}
     {%- if it.reasonsDeletion -%}
       {%- if it.reasonsDeletion._label -%}{%- set delReason = it.reasonsDeletion._label -%}
       {%- elif it.reasonsDeletion._value -%}{%- set delReason = it.reasonsDeletion._value -%}{%- endif -%}
     {%- endif -%}
     {%- set delWhen = it.timepointDeletion._value if (it.timepointDeletion and it.timepointDeletion._value) else "" -%}
-    {%- set delPres = ["This data is scheduled for deletion and will not be preserved."] -%}
-    {%- if delReason -%}{%- do delPres.append("Reason for deletion: " ~ delReason ~ ".") -%}{%- endif -%}
-    {%- if delWhen   -%}{%- do delPres.append("Planned time of deletion: " ~ delWhen ~ ".") -%}{%- endif -%}
+    {%- set delPres = [_('This data is scheduled for deletion and will not be preserved.')] -%}
+    {%- if delReason -%}{%- do delPres.append(_('Reason for deletion: %(reason)s.', reason=delReason|safe)) -%}{%- endif -%}
+    {%- if delWhen   -%}{%- do delPres.append(_('Planned time of deletion: %(timepoint)s.', timepoint=delWhen|safe)) -%}{%- endif -%}
     {%- set delPersonal = "yes" if (delReason and "personal data" in delReason|lower) else "unknown" -%}
     {#- RDA DCS dataset field order. -#}
     {%- set delDataset = {
@@ -678,19 +717,19 @@
      number once thousands separators are removed. -#}
 {%- set costInputs = [] -%}
 {%- if respres.recurringFees and respres.recurringFees._value is sameas true and respres.recurringFees.indicateCosts3 and respres.recurringFees.indicateCosts3._value -%}
-  {%- do costInputs.append({"title": "Software licenses / recurring costs", "description": respres.recurringFees.indicateCosts3._value}) -%}
+  {%- do costInputs.append({"title": _('Software licenses / recurring costs'), "description": respres.recurringFees.indicateCosts3._value}) -%}
 {%- endif -%}
 {%- if respres.storageActivePhase and respres.storageActivePhase._value == "yes" and respres.storageActivePhase.indicateCosts2 and respres.storageActivePhase.indicateCosts2._value -%}
-  {%- do costInputs.append({"title": "Active-phase data storage", "description": respres.storageActivePhase.indicateCosts2._value}) -%}
+  {%- do costInputs.append({"title": _('Active-phase data storage'), "description": respres.storageActivePhase.indicateCosts2._value}) -%}
 {%- endif -%}
 {%- if respres.preservationArchivingAssociated and respres.preservationArchivingAssociated._value == "yes" and respres.preservationArchivingAssociated.indicateCosts and respres.preservationArchivingAssociated.indicateCosts._value -%}
-  {%- do costInputs.append({"title": "Preservation and archiving", "description": respres.preservationArchivingAssociated.indicateCosts._value}) -%}
+  {%- do costInputs.append({"title": _('Preservation and archiving'), "description": respres.preservationArchivingAssociated.indicateCosts._value}) -%}
 {%- endif -%}
 {%- if respres.hasDataPublicationBudget and respres.hasDataPublicationBudget._value is sameas true and respres.hasDataPublicationBudget.budget and respres.hasDataPublicationBudget.budget._value -%}
-  {%- do costInputs.append({"title": "Data publication budget", "description": respres.hasDataPublicationBudget.budget._value}) -%}
+  {%- do costInputs.append({"title": _('Data publication budget'), "description": respres.hasDataPublicationBudget.budget._value}) -%}
 {%- endif -%}
 {%- if respres.totalCostsManagement and respres.totalCostsManagement._value -%}
-  {%- do costInputs.append({"title": "Total data management cost", "description": respres.totalCostsManagement._value}) -%}
+  {%- do costInputs.append({"title": _('Total data management cost'), "description": respres.totalCostsManagement._value}) -%}
 {%- endif -%}
 
 {%- set costs = [] -%}
@@ -733,12 +772,15 @@
      correct position instead of being appended at the end. -#}
 {%- set dmp = {} -%}
 {%- if contacts|length > 0 -%}
-  {#- contact field order: contact_id, mbox, name (affiliation not emitted). -#}
-  {%- do dmp.update({"contact": {
+  {#- contact field order: affiliation (DCS 1.2+, from the contributor), contact_id, mbox, name. -#}
+  {%- set contact = {} -%}
+  {%- if contacts[0]["affiliation"] -%}{%- do contact.update({"affiliation": contacts[0]["affiliation"]}) -%}{%- endif -%}
+  {%- do contact.update({
     "contact_id": contacts[0]["contributor_id"],
     "mbox": contacts[0]["mbox"],
     "name": contacts[0]["name"]
-  }}) -%}
+  }) -%}
+  {%- do dmp.update({"contact": contact}) -%}
 {%- endif -%}
 {%- do dmp.update({"contributor": contributors}) -%}
 {%- do dmp.update({"cost": costs}) -%}
@@ -750,9 +792,13 @@
   {%- do dmp.update({"ethical_issues_description": ethicalIssuesDescription}) -%}
 {%- endif -%}
 {%- do dmp.update({"ethical_issues_exist": ethicalIssuesExist}) -%}
-{%- do dmp.update({"language": "eng"}) -%}
+{%- do dmp.update({"language": dmpLanguage}) -%}
 {%- do dmp.update({"modified": ctx.project.updatedAt|datetime_format("%Y-%m-%dT%H:%M:%SZ")}) -%}
 {%- do dmp.update({"project": projects}) -%}
 {%- do dmp.update({"title": dmpTitle}) -%}
+{#- OSTrails: version of the DMP = the latest named version of the project -#}
+{%- if isOstrails and ctx.questionnaire.versions -%}
+  {%- do dmp.update({"version": (ctx.questionnaire.versions|sort(attribute="createdAt")|last).name}) -%}
+{%- endif -%}
 
 {%- set madmp = {"dmp": dmp} -%}

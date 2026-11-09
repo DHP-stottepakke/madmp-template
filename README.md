@@ -1,6 +1,27 @@
 # Machine-Actionable DMP
 
-Template based on the [RDA DMP Common Standard (DCS)](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard) for machine-actionable Data Management Plans and the provided [JSON schema](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema) for machine-actionable DMPs. It also uses the [DCS Ontology](https://github.com/RDA-DMP-Common/dcso) to allow export in RDF. Template is designed for use in [Data Stewardship Wizard](https://ds-wizard.org) or [FAIR Wizard](https://fair-wizard.com/) with the [Norwegian DSW Knowledge Model](https://registry.ds-wizard.org/knowledge-models/research.data.no:norway-generic:latest)
+Template based on the [RDA DMP Common Standard (DCS)](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard) for machine-actionable Data Management Plans. It produces maDMPs in JSON according to the [DCS JSON schemas](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema) and the [OSTrails Application Profile](https://github.com/OSTrails/ostrails-madmp-ap). Template is designed for use in [Data Stewardship Wizard](https://ds-wizard.org) 5.0 or newer (for older versions, use the template version 1.x) with the [Norwegian DSW Knowledge Model](https://registry.ds-wizard.org/knowledge-models/research.data.no:norway-generic:latest) (`research.data.no.norway-generic` 1.2.0 or newer).
+
+This is a fork of [ds-wizard/madmp-template](https://github.com/ds-wizard/madmp-template), which targets the Common Data Stewardship and Life Sciences knowledge models. The mapping (`src/_mapping.j2`) is specific to the Norwegian knowledge model; the formats, schema-version handling and localization follow upstream.
+
+
+## Formats
+
+| Format | Schema |
+|---|---|
+| JSON (DCS 1.3) | [RDA DMP Common Standard 1.3](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.3) |
+| JSON (DCS 1.2) | [RDA DMP Common Standard 1.2](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.2) |
+| JSON (DCS 1.1) | [RDA DMP Common Standard 1.1](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.1) (format UUID of the former JSON format) |
+| JSON (DCS 1.0) | [RDA DMP Common Standard 1.0](https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.0) |
+| JSON (OSTrails AP) | [OSTrails Application Profile](https://github.com/OSTrails/ostrails-madmp-ap) (DCS 1.2 with extensions) |
+
+Each format contains only what its schema defines: affiliations, alternate identifiers, reused datasets, rights and host identifiers are available since DCS 1.2; DCS 1.3 uses `restricted` instead of the deprecated `shared` data access; DCS 1.0 requires project dates and grant identifiers (projects and fundings without them are left out). The texts of the maDMP are translatable, and `dmp.language` follows the locale of the document.
+
+Deliberate deviations from the schemas (the output is then not valid, but no information is lost):
+
+- A license is exported also without a starting date (`start_date` is required by all versions).
+- A DMP is exported also without datasets (DCS 1.0 requires at least one).
+
 
 ## Usage
 
@@ -43,6 +64,18 @@ For the work captured in this thread, the following AI tooling was used:
 
 
 ## Changelog
+
+
+### 2.0.0
+
+- Updated to metamodel version 19.0 (DSW 5.0); the template ID is now `research.data.no.rda-madmp` and the allowed package `research.data.no.norway-generic`
+- Added formats for all versions of the RDA DMP Common Standard JSON schema (1.0, 1.1, 1.2, 1.3) and the OSTrails Application Profile, with the same format UUIDs as [ds-wizard/madmp-template](https://github.com/ds-wizard/madmp-template); the UUID of the former JSON format (DCS 1.2) now belongs to JSON (DCS 1.1), so documents of the former JSON format are generated according to DCS 1.1
+- Removed RDF formats (Turtle, N3, RDF/XML, JSON-LD, N-Triples, TriG)
+- Marked the texts of the maDMP for translation; the language of the DMP follows the locale of the document (ISO 639-3)
+- Added the contact's affiliation (DCS 1.2 and newer) and the DMP version (OSTrails, latest named project version)
+- Fixed project abstract and free-text dataset descriptions to be exported without Markdown
+- Fixed distributions without data access and hosts without title or URL that made the maDMP invalid
+- Replaced the vendored document worker in `tools/` with `dsw-tdk` 5.0 and added schema validation (`tools/check.sh`)
 
 
 ### 1.29.1

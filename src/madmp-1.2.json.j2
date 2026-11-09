@@ -1,0 +1,5 @@
+{#- maDMP according to the RDA DMP Common Standard 1.2: https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.2 -#}
+{%- set dcsVersion = "1.2" -%}
+{%- set dcsProfile = "dcs" -%}
+{%- import "src/_mapping.j2" as mapping with context -%}
+{{ mapping.madmp|tojson(4) }}

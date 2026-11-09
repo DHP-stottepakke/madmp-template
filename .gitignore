@@ -25,3 +25,8 @@ dsw_root_2.8.0_json_extraction_demo.json
 results_in_scope_collisions.txt
 results_in_scope_collisions_updated.txt
 
+
+# Local tooling outputs (tools/check.sh, tools/validate.py)
+output/
+.cache/
+*.context.json
