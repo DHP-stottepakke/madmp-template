@@ -41,10 +41,12 @@ def load_schema(key: str) -> dict:
 
 
 def guess_schema(name: str) -> str | None:
-    if 'ostrails' in name.lower():
-        return 'ostrails'
-    m = re.search(r'1\.([0-3])', name)
-    return f'1.{m.group(1)}' if m else None
+    # only the format suffix counts: check.sh names files <context>.<format>.json, and the
+    # context name may itself contain e.g. "1.3" or "ostrails"
+    m = re.search(r'\.(?:dcs-(1\.[0-3])|(ostrails))\.json$', name, re.IGNORECASE)
+    if not m:
+        return None
+    return m.group(1) or 'ostrails'
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -37,6 +37,28 @@ python tools/replies.py path/to/context.json --list-chapters
 python tools/walk_km.py path/to/context.json
 ```
 
+## End-to-end test with synthetic projects
+
+```bash
+python tools/e2e.py                    # 5 profiles x 8 seeds x 2 variants (~80 projects)
+python tools/e2e.py --seeds 30 --jobs 8
+python tools/e2e.py --quick            # smoke run
+```
+
+`tools/e2e.py` generates synthetic projects from `../research.data.no.norway-generic_1.2.1.km`
+(`--km` for another bundle) with the dsw-tdk generator (profiles empty, minimal, typical,
+full, edge; a few KM editor previews), and makes them realistic: integration replies get
+the payloads of the API responses recorded in the KM (`testResponse` of each integration,
+with the reply text rendered by its item template) or a typed reply; text answers get
+Markdown and string answers characters that need escaping. It renders every format and
+checks each document: schema (with formats), members the schema version does not define,
+text hygiene (escaped HTML, Markdown left over, `None`/`Undefined`, empty strings), an
+oracle computed from the replies (title, contributors and ORCID iDs, affiliations, dataset
+titles and PIDs, license references, ethical issues, dates, project, OSTrails version,
+language), the same content in all formats, and determinism. It also reports which answers
+the mapping refers to were never selected. Results go to `output/e2e/report.md`
+(`report.json`, `contexts/`, `documents/`); the exit code is 1 when there are errors.
+
 Document contexts contain project data and stay out of git: keep them outside
 the repository or under a gitignored name. `output/` and `.cache/` (downloaded
 schemas) are gitignored.
