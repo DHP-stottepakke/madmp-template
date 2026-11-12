@@ -42,6 +42,11 @@ Starting v1.30.0, AI tools (Codex, Claude Code) are used to assist in the develo
 
 ## Changelog
 
+### 3.1.1
+
+- Fixed the document failing ("'dict object' has no attribute ...") for projects with selected question tags; questions hidden by the tags are treated as not answered
+- Fixed the document failing on a contributor whose typed reply ends with "ORCID:"
+
 ### 3.1.0
 
 - Added the ethical approval of research projects (approval status and case number) to ethical issues
