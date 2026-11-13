@@ -76,6 +76,7 @@ For the work captured in this thread, the following AI tooling was used:
 - Fixed project abstract and free-text dataset descriptions to be exported without Markdown
 - Fixed distributions without data access and hosts without title or URL that made the maDMP invalid
 - Replaced the vendored document worker in `tools/` with `dsw-tdk` 5.0 and added schema validation (`tools/check.sh`)
+- Tested projects with selected question tags (questions hidden by the tags are treated as not answered); the end-to-end test (`tools/e2e.py`) covers them
 
 
 ### 1.29.1

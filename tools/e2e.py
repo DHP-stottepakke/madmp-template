@@ -8,6 +8,9 @@ End-to-end test of the template with synthetic projects.
    KM records for each integration (its `testResponse`), with the reply text rendered by the
    integration's item template, or a typed (plain) reply; text answers get Markdown and
    string answers get characters that need escaping (sentinels the checks look for).
+   Copies of some projects are rendered with a document language, and with selected question
+   tags: DSW then leaves the questions without a selected tag out of the knowledge model of the
+   context (each tag of the KM and a pair of tags, with and without untagged questions).
 3. Render every format of the template with the DSW 5 engine (dsw-tdk, in-process).
 4. Check every document: rendered, JSON, schema (with formats), members the schema version
    does not define, text hygiene, an oracle computed independently from the replies, the same
@@ -230,6 +233,78 @@ def generate(case: Case, km_path: pathlib.Path, ctx_dir: pathlib.Path, _cache={}
     ctx = gen.finalize(ctx)
     (ctx_dir / f'{case.name}.json').write_text(gen.dumps(ctx), encoding='utf-8')
     return case
+
+
+# ----------------------------------------------------------------------------- question tags
+
+def prune_to_tags(ctx: dict, selected: list[str], keep_untagged: bool) -> int:
+    """Remove the questions a project with selected question tags does not show, as DSW does in
+    the document context: questions without a selected tag (and, unless keep_untagged, questions
+    without tags), with everything below them. Returns the number of removed questions."""
+    ents = ctx['knowledgeModel']['entities']
+    qs, answers = ents['questions'], ents['answers']
+    sel = set(selected)
+
+    def shown(u: str) -> bool:
+        tags = set(qs[u].get('tagUuids') or []) if u in qs else set()
+        return bool(tags & sel) or (keep_untagged and not tags)
+
+    for ch in ents['chapters'].values():
+        ch['questionUuids'] = [u for u in ch['questionUuids'] if shown(u)]
+    for a in answers.values():
+        a['followUpUuids'] = [u for u in a.get('followUpUuids') or [] if shown(u)]
+    for q in qs.values():
+        if 'itemTemplateQuestionUuids' in q:
+            q['itemTemplateQuestionUuids'] = [u for u in q['itemTemplateQuestionUuids'] if shown(u)]
+    # drop entities no longer reachable from the chapters
+    reachable_q, reachable_a, stack = set(), set(), [u for ch in ents['chapters'].values() for u in ch['questionUuids']]
+    while stack:
+        u = stack.pop()
+        if u in reachable_q or u not in qs:
+            continue
+        reachable_q.add(u)
+        q = qs[u]
+        stack += q.get('itemTemplateQuestionUuids') or []
+        for au in q.get('answerUuids') or []:
+            reachable_a.add(au)
+            stack += (answers.get(au) or {}).get('followUpUuids') or []
+    removed = len(qs) - len(reachable_q)
+    ents['questions'] = {u: q for u, q in qs.items() if u in reachable_q}
+    ents['answers'] = {u: a for u, a in answers.items() if u in reachable_a}
+    choice_uuids = {c for q in ents['questions'].values() for c in q.get('choiceUuids') or []}
+    ents['choices'] = {u: c for u, c in ents['choices'].items() if u in choice_uuids}
+    ctx['project']['selectedQuestionTagUuids'] = list(selected)
+    return removed
+
+
+def plan_tag_cases(cases: list[Case], ctx_dir: pathlib.Path) -> list[Case]:
+    """Copies of typical, full and edge projects filtered by each tag of the KM (and one pair of
+    tags), with and without untagged questions, written as contexts; returns their cases."""
+    from dsw.models.document_context.hash import compute_context_hash
+    from dsw.tdk.context import generate as gen
+    bases = [c for c in cases if c.source == 'project' and c.profile in ('typical', 'full', 'edge')]
+    if not bases:
+        return []
+    km_tags = json.loads((ctx_dir / f'{bases[0].name}.json').read_text('utf-8'))['knowledgeModel']['entities']['tags']
+    tags = sorted(km_tags.values(), key=lambda t: t['name'])
+    selections = [[t] for t in tags] + ([tags[:2]] if len(tags) >= 2 else [])
+    out = []
+    for i, sel in enumerate(selections):
+        for keep_untagged in (False, True):
+            base = bases[(2 * i + keep_untagged) % len(bases)]
+            ctx = json.loads((ctx_dir / f'{base.name}.json').read_text('utf-8'))
+            removed = prune_to_tags(ctx, [t['uuid'] for t in sel], keep_untagged)
+            slug = '+'.join(re.sub(r'[^a-z0-9]+', '_', t['name'].lower()).strip('_') for t in sel)
+            tc = copy.deepcopy(base)
+            tc.name = f'{base.name}-tags-{slug}' + ('-untagged' if keep_untagged else '')
+            tc.injected['_tags'] = {'tags': [t['name'] for t in sel], 'keep_untagged': keep_untagged,
+                                    'removed_questions': removed}
+            # not gen.finalize(): its validation rejects the replies (and labels) of the removed
+            # questions, which DSW keeps in the questionnaire; the template must ignore them
+            ctx['hash'] = compute_context_hash(ctx)
+            (ctx_dir / f'{tc.name}.json').write_text(gen.dumps(ctx), encoding='utf-8')
+            out.append(tc)
+    return out
 
 
 # ----------------------------------------------------------------------------- rendering
@@ -486,6 +561,8 @@ def identifiers(o, path=''):
 KNOWN_DEVIATIONS = [
     # documented in src/_mapping.j2: a license without starting date is kept
     (re.compile(r"/license/\d+$"), re.compile(r"'start_date' is a required property")),
+    # documented in README.md: a DMP without datasets is exported (DCS 1.0 requires one)
+    (re.compile(r"^/dmp/dataset$"), re.compile(r"should be non-empty")),
 ]
 
 
@@ -610,6 +687,7 @@ def write_report(out: pathlib.Path, f: Findings, stats: dict, coverage: dict, ex
              f'- contexts: {stats["contexts"]} ({", ".join(f"{k}: {v}" for k, v in stats["by_profile"].items())})',
              f'- KM editor previews: {stats["editors"]} (without package: {stats["nopkg"]}); '
              f'generic integration payloads: {stats["generic"]}; with Markdown/escaping sentinels: {stats["markup"]}',
+             f'- filtered by selected question tags: {stats["tag_contexts"]} (copies, KM pruned)',
              f'- documents: {stats["documents"]} rendered, {stats["render_failures"]} failed; '
              f'render time {stats["render_s"]:.1f} s ({stats["jobs"]} jobs)',
              f'- integration replies injected: {stats["payloads"]} payloads, {stats["plains"]} typed', '',
@@ -671,6 +749,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--out', default=str(ROOT / 'output' / 'e2e'))
     p.add_argument('--examples', type=int, default=8, help='examples per check in report.md')
     p.add_argument('--quick', action='store_true', help='2 seeds, 1 variant')
+    p.add_argument('--no-tags', action='store_true',
+                   help='skip the projects filtered by selected question tags')
     args = p.parse_args(argv)
     if args.quick:
         args.seeds, args.count = 2, 1
@@ -701,10 +781,18 @@ def main(argv: list[str] | None = None) -> int:
         (ctx_dir / f'{lc.name}.json').write_text((ctx_dir / f'{c.name}.json').read_text('utf-8'), 'utf-8')
         locale_cases.append((lc, lang))
 
-    print(f'rendering {len(cases) + len(locale_cases)} contexts x {len(FORMATS)} formats ...', flush=True)
+    # question tags pass: projects filtered by selected question tags (the KM is pruned)
+    tag_cases = [] if args.no_tags else plan_tag_cases(cases, ctx_dir)
+    for tc in tag_cases:
+        if not tc.injected['_tags']['removed_questions']:
+            print(f'  warning: {tc.name}: the tag selection removed no question', flush=True)
+
+    print(f'rendering {len(cases) + len(locale_cases) + len(tag_cases)} contexts x {len(FORMATS)} formats ...',
+          flush=True)
     t0 = time.monotonic()
     files = [str(ctx_dir / f'{c.name}.json') for c in cases]
-    jobs = [(chunk, str(doc_dir), None) for chunk in chunks(files, args.jobs * 3)]
+    tag_files = [str(ctx_dir / f'{tc.name}.json') for tc in tag_cases]
+    jobs = [(chunk, str(doc_dir), None) for chunk in chunks(files + tag_files, args.jobs * 3)]
     jobs += [([str(ctx_dir / f'{lc.name}.json')], str(doc_dir), lang) for lc, lang in locale_cases]
     # determinism: the first contexts once more, into another directory
     again_dir = out / 'documents-again'
@@ -724,7 +812,8 @@ def main(argv: list[str] | None = None) -> int:
         cls = jsonschema.validators.validator_for(schema)
         validators[key] = (schema, cls(schema, format_checker=cls.FORMAT_CHECKER))
 
-    all_cases = {c.name: c for c in cases} | {lc.name: lc for lc, _ in locale_cases}
+    all_cases = {c.name: c for c in cases} | {lc.name: lc for lc, _ in locale_cases} | \
+                {tc.name: tc for tc in tag_cases}
     docs: dict[str, dict[str, dict]] = collections.defaultdict(dict)
     again_docs = {}
     failures = 0
@@ -762,7 +851,7 @@ def main(argv: list[str] | None = None) -> int:
                 if v != sums[ref_fmt][k]:
                     findings.add('cross-format', 'error', name, fmt, f'/dmp/{k}',
                                  f'differs from {ref_fmt}: {v!r} vs {sums[ref_fmt][k]!r}'[:300])
-        if '-lang-' not in name:
+        if '-lang-' not in name and '-tags-' not in name:  # copies: counted once, as their base
             for k in oracle.answered_values():
                 coverage_values[k] += 1
             for path, inj in case.injected.items():
@@ -792,7 +881,7 @@ def main(argv: list[str] | None = None) -> int:
              'editors': sum(c.source == 'km-editor' for c in cases), 'nopkg': sum(c.no_package for c in cases),
              'generic': sum(c.integrations == 'generic' for c in cases), 'markup': sum(c.markup for c in cases),
              'documents': len(results) - failures, 'render_failures': failures, 'render_s': render_s,
-             'jobs': args.jobs,
+             'jobs': args.jobs, 'tag_contexts': len(tag_cases),
              'payloads': sum(i['mode'] == 'payload' for c in cases for k, i in c.injected.items() if not k.startswith('_')),
              'plains': sum(i['mode'] == 'plain' for c in cases for k, i in c.injected.items() if not k.startswith('_'))}
     write_report(out, findings, stats, coverage, args.examples)

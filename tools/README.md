@@ -50,7 +50,10 @@ python tools/e2e.py --quick            # smoke run
 full, edge; a few KM editor previews), and makes them realistic: integration replies get
 the payloads of the API responses recorded in the KM (`testResponse` of each integration,
 with the reply text rendered by its item template) or a typed reply; text answers get
-Markdown and string answers characters that need escaping. It renders every format and
+Markdown and string answers characters that need escaping. Copies of typical, full and edge
+projects are filtered by selected question tags, as DSW does it (each tag of the KM and a
+pair of tags, with and without untagged questions; the questions without a selected tag are
+removed from the KM, their replies stay in the questionnaire); `--no-tags` skips them. It renders every format and
 checks each document: schema (with formats), members the schema version does not define,
 text hygiene (escaped HTML, Markdown left over, `None`/`Undefined`, empty strings), an
 oracle computed from the replies (title, contributors and ORCID iDs, affiliations, dataset
