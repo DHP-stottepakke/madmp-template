@@ -114,12 +114,14 @@
   "projectManager":    "ProjectManager",
   "projectMember":     "ProjectMember",
   "workPackageLeader": "WorkPackageLeader",
+  "dmpContributor":    "Other",
   "other":             "Other",
 } -%}
 
 {%- set contributors = [] -%}
 {%- set contacts = [] -%}
-{%- for c in admin.contributors -%}
+{#- Contributor(s) live in the 'About' chapter (researchProjectChapter) since KM 1.2.2. -#}
+{%- for c in research.contributors -%}
   {#- Required for a usable contributor entry: name + at least one role. -#}
   {%- set name = c.name._value|trim if c.name else "" -%}
   {%- set email = c.email._value|trim if c.email else "" -%}
@@ -160,7 +162,7 @@
     {%- do entry.update({"contributor_id": contributorId}) -%}
     {%- if email -%}{%- do entry.update({"mbox": email}) -%}{%- endif -%}
     {%- do entry.update({"name": name}) -%}
-    {%- do entry.update({"role": roles|sort}) -%}
+    {%- do entry.update({"role": roles|unique|sort}) -%}{#- unique: several KM roles can map to "Other" -#}
     {%- do contributors.append(entry) -%}
     {%- if "contactPerson" in roleValues and email -%}
       {%- do contacts.append(entry) -%}
@@ -189,15 +191,36 @@
 {%- set fundings = [] -%}
 {%- if research.didPlanApply and research.didPlanApply._value == "yes" -%}
   {%- for f in research.didPlanApply.fundings -%}
-    {#- funder is a ROR integration: the raw payload exposes the ROR URL as `id`
-        (same as the affiliation block above). The plain `_value` is rendered
-        markdown (a ROR badge + link), so only fall back to it when there is no
-        raw payload (e.g. a manually typed URL). -#}
+    {#- Since KM 1.2.2 the funder is chosen via `funderSource`:
+          researchCouncilNorway -> funderRcn    (NVA verified-funding payload, grant = `identifier`)
+          cordis                -> funderCordis (CORDIS project payload, grant = `id`)
+          manual                -> funder (ROR integration) + grantNumber
+        The RCN/CORDIS funders are fixed; their ROR ids are the ones shown by the
+        integrations' item templates. -#}
+    {%- set src = f.funderSource -%}
     {%- set funderUrl = "" -%}
-    {%- if f.funder and f.funder._raw and f.funder._raw.id -%}
-      {%- set funderUrl = f.funder._raw.id|trim -%}
-    {%- elif f.funder and f.funder._value -%}
-      {%- set funderUrl = f.funder._value|trim -%}
+    {%- set grantNumber = "" -%}
+    {%- if src and src._value == "researchCouncilNorway" -%}
+      {%- set funderUrl = "https://ror.org/00epmv149" -%}
+      {%- if src.funderRcn and src.funderRcn._raw and src.funderRcn._raw.identifier -%}
+        {%- set grantNumber = src.funderRcn._raw.identifier|string|trim -%}
+      {%- endif -%}
+    {%- elif src and src._value == "cordis" -%}
+      {%- set funderUrl = "https://ror.org/00k4n6c32" -%}
+      {%- if src.funderCordis and src.funderCordis._raw and src.funderCordis._raw.id -%}
+        {%- set grantNumber = src.funderCordis._raw.id|string|trim -%}
+      {%- endif -%}
+    {%- elif src and src._value == "manual" -%}
+      {#- funder is a ROR integration: the raw payload exposes the ROR URL as `id`
+          (same as the affiliation block above). The plain `_value` is rendered
+          markdown (a ROR badge + link), so only fall back to it when there is no
+          raw payload (e.g. a manually typed URL). -#}
+      {%- if src.funder and src.funder._raw and src.funder._raw.id -%}
+        {%- set funderUrl = src.funder._raw.id|trim -%}
+      {%- elif src.funder and src.funder._value -%}
+        {%- set funderUrl = src.funder._value|trim -%}
+      {%- endif -%}
+      {%- set grantNumber = src.grantNumber._value|trim if src.grantNumber else "" -%}
     {%- endif -%}
 
     {%- set statusMap = {
@@ -207,7 +230,6 @@
       "rejected": "rejected"
     } -%}
     {%- set fundingStatus = statusMap.get(f.status._value, "") if f.status else "" -%}
-    {%- set grantNumber = f.grantNumber._value|trim if f.grantNumber else "" -%}
 
     {%- if funderUrl and (grantNumber or dcsMinor >= 1) -%}{#- DCS 1.0 requires grant_id -#}
       {#- a typed funder name is not a URL -#}
@@ -507,8 +529,8 @@
              if (lst and ref) else None -%}
         {%- if item -%}
           {%- set isReused = true -%}
-          {%- if item.dataset_1 and item.dataset_1._value|trim -%}
-            {%- do descParts.append(_('Data originating from: %(source)s.', source=item.dataset_1._value|trim|safe)) -%}
+          {%- if item.datasetName and item.datasetName._value|trim -%}
+            {%- do descParts.append(_('Data originating from: %(source)s.', source=item.datasetName._value|trim|safe)) -%}
           {%- endif -%}
           {%- if item.collectionMethodology and item.collectionMethodology._value -%}
             {%- do descParts.append(plainText(item.collectionMethodology)|trim|safe) -%}

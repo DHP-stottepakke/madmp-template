@@ -376,7 +376,7 @@ class Oracle:
 
     def contributors(self) -> list[dict]:
         out = []
-        for c in self.get('administrativeInformation', 'contributors') or []:
+        for c in self.get('researchProjectChapter', 'contributors') or []:
             name = ((c.get('name') or {}).get('_value') or '').strip()
             if not name or not c.get('roles'):
                 continue
